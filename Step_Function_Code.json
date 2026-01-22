@@ -1,0 +1,68 @@
+{
+  "Comment": "EMR Auto Start/Stop Medicaid ETL Pipeline",
+  "StartAt": "Create EMR Cluster",
+  "States": {
+    "Create EMR Cluster": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::elasticmapreduce:createCluster.sync",
+      "Parameters": {
+        "Name": "MedicaidPipelineCluster",
+        "ReleaseLabel": "emr-7.8.0",
+        "Applications": [
+          {
+            "Name": "Spark"
+          }
+        ],
+        "Instances": {
+          "InstanceGroups": [
+            {
+              "InstanceRole": "MASTER",
+              "InstanceType": "m4.large",
+              "InstanceCount": 1
+            },
+            {
+              "InstanceRole": "CORE",
+              "InstanceType": "m4.large",
+              "InstanceCount": 2
+            }
+          ],
+          "KeepJobFlowAliveWhenNoSteps": true,
+          "TerminationProtected": false
+        },
+        "JobFlowRole": "EMR_EC2_DefaultRole",
+        "ServiceRole": "EMR_DefaultRole",
+        "LogUri": "s3://finalprojectankita/logs/"
+      },
+      "ResultPath": "$.clusterResult",
+      "Next": "Run ETL Script"
+    },
+    "Run ETL Script": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::elasticmapreduce:addStep.sync",
+      "Parameters": {
+        "ClusterId.$": "$.clusterResult.ClusterId",
+        "Step": {
+          "Name": "Run Medicaid ETL PySpark",
+          "ActionOnFailure": "CONTINUE",
+          "HadoopJarStep": {
+            "Jar": "command-runner.jar",
+            "Args": [
+              "spark-submit",
+              "s3://finalprojectankita/scripts/medicaid_pipeline.py"
+            ]
+          }
+        }
+      },
+      "ResultPath": "$.etlResult",
+      "Next": "Terminate EMR Cluster"
+    },
+    "Terminate EMR Cluster": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::elasticmapreduce:terminateCluster",
+      "Parameters": {
+        "ClusterId.$": "$.clusterResult.ClusterId"
+      },
+      "End": true
+    }
+  }
+}
